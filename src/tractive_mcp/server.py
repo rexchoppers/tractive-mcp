@@ -254,12 +254,15 @@ async def lost_pet(
             recent_points += len(entries)
 
         # Activate tracker features as requested
+        live_tracking_response = None
+        buzzer_response = None
+        led_response = None
         if enable_live_tracking:
-            await tracker.set_live_tracking_active(True)
+            live_tracking_response = await tracker.set_live_tracking_active(True)
         if enable_buzzer:
-            await tracker.set_buzzer_active(True)
+            buzzer_response = await tracker.set_buzzer_active(True)
         if enable_led:
-            await tracker.set_led_active(True)
+            led_response = await tracker.set_led_active(True)
 
         return {
             "pet_name": pet_name,
@@ -282,11 +285,89 @@ async def lost_pet(
                 "points_last_3_hours": recent_points,
             },
             "actions_taken": {
-                "live_tracking": enable_live_tracking,
-                "buzzer": enable_buzzer,
-                "led": enable_led,
+                "live_tracking": {"requested": enable_live_tracking, "response": live_tracking_response},
+                "buzzer": {"requested": enable_buzzer, "response": buzzer_response},
+                "led": {"requested": enable_led, "response": led_response},
             },
         }
+
+
+@mcp.tool()
+async def set_buzzer(device_id: str, active: bool) -> dict:
+    """Turn the tracker buzzer on or off.
+
+    Args:
+        device_id: The device_id from list_pets.
+        active: True to turn on, False to turn off.
+    """
+    async with tractive_client() as client:
+        tracker = client.tracker(device_id)
+        response = await tracker.set_buzzer_active(active)
+        return {"buzzer": "on" if active else "off", "response": response}
+
+
+@mcp.tool()
+async def set_led(device_id: str, active: bool) -> dict:
+    """Turn the tracker LED light on or off.
+
+    Args:
+        device_id: The device_id from list_pets.
+        active: True to turn on, False to turn off.
+    """
+    async with tractive_client() as client:
+        tracker = client.tracker(device_id)
+        response = await tracker.set_led_active(active)
+        return {"led": "on" if active else "off", "response": response}
+
+
+@mcp.tool()
+async def set_live_tracking(device_id: str, active: bool) -> dict:
+    """Turn live tracking mode on or off. Live tracking gives more frequent GPS updates but uses more battery.
+
+    Args:
+        device_id: The device_id from list_pets.
+        active: True to turn on, False to turn off.
+    """
+    async with tractive_client() as client:
+        tracker = client.tracker(device_id)
+        response = await tracker.set_live_tracking_active(active)
+        return {"live_tracking": "on" if active else "off", "response": response}
+
+
+@mcp.tool()
+async def get_pet_profile(device_id: str) -> dict:
+    """Get the full profile of a pet including breed, weight, birthday, and activity goals.
+
+    Args:
+        device_id: The device_id from list_pets.
+    """
+    async with tractive_client() as client:
+        objects = await client.trackable_objects()
+        for obj in objects:
+            d = await obj.details()
+            obj_device = d.get("device_id") or (d.get("device_ids") or [None])[0]
+            if obj_device == device_id:
+                details = d.get("details", {})
+                activity = details.get("activity_settings", {})
+                return {
+                    "name": details.get("name"),
+                    "pet_type": details.get("pet_type"),
+                    "breed_ids": details.get("breed_ids"),
+                    "gender": details.get("gender"),
+                    "birthday": details.get("birthday"),
+                    "weight_grams": details.get("weight"),
+                    "height_metres": details.get("height"),
+                    "neutered": details.get("neutered"),
+                    "chip_id": details.get("chip_id") or None,
+                    "home_location": d.get("home_location"),
+                    "created_at": d.get("created_at"),
+                    "activity_goals": {
+                        "daily_goal": activity.get("daily_goal"),
+                        "daily_distance_goal": activity.get("daily_distance_goal"),
+                        "daily_active_minutes_goal": activity.get("daily_active_minutes_goal"),
+                    },
+                }
+        return {"error": f"No pet found with device_id {device_id}"}
 
 
 if __name__ == "__main__":
