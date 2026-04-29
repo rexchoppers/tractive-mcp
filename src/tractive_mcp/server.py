@@ -127,5 +127,29 @@ async def get_pet_distance_from_home(device_id: str) -> dict:
         }
 
 
+@mcp.tool()
+async def get_tracker_status(device_id: str) -> dict:
+    """Get the status of a Tractive GPS tracker.
+
+    Args:
+        device_id: The device_id from list_pets.
+
+    Returns battery level, charging state, connection state, and hardware info.
+    """
+    async with tractive_client() as client:
+        tracker = client.tracker(device_id)
+        details, hw = await tracker.details(), await tracker.hw_info()
+        return {
+            "device_id": device_id,
+            "state": details.get("state"),
+            "battery_level": hw.get("battery_level"),
+            "charging_state": details.get("charging_state"),
+            "connection_state": details.get("connection_state"),
+            "firmware_version": hw.get("fw_version"),
+            "hardware_revision": hw.get("hw_revision"),
+            "model_number": details.get("model_number"),
+        }
+
+
 if __name__ == "__main__":
     main()
