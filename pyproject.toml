@@ -1,6 +1,6 @@
 [project]
 name = "tractive-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server for Tractive GPS pet trackers — location, status, history, and more"
 readme = "README.md"
 license = "MIT"
