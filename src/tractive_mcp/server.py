@@ -1,9 +1,15 @@
 import argparse
 import getpass
+import time as _time
 
 from mcp.server.fastmcp import FastMCP
 
 from tractive_mcp.client import haversine, tractive_client, save_credentials
+from tractive_mcp.models import (
+    PetResponse, PetLocationResponse, PetDistanceResponse,
+    TrackerStatusResponse, RecentPositionsResponse, RecentPositionsSummary,
+    BoundingBox, PositionPoint,
+)
 
 mcp = FastMCP("tractive")
 
@@ -58,13 +64,7 @@ async def list_pets() -> list[dict]:
 
         for obj in objects:
             d = await obj.details()
-
-            pets.append({
-                "id": d.get("_id"),
-                "name": d.get("details", {}).get("name") or d.get("name"),
-                "pet_type": d.get("details", {}).get("pet_type") or d.get("pet_type"),
-                "device_id": d.get("device_id") or (d.get("device_ids") or [None])[0],
-            })
+            pets.append(PetResponse.from_raw(d).to_dict())
         return pets
 
 @mcp.tool()
@@ -79,17 +79,7 @@ async def get_pet_location(device_id: str) -> dict:
     async with tractive_client() as client:
         tracker = client.tracker(device_id)
         pos = await tracker.pos_report()
-        return {
-            "latitude": pos.get("latlong", [None, None])[0],
-            "longitude": pos.get("latlong", [None, None])[1],
-            "speed": pos.get("speed"),
-            "altitude": pos.get("altitude"),
-            "course": pos.get("course"),
-            "accuracy": pos.get("pos_uncertainty"),
-            "sensor_used": pos.get("sensor_used"),
-            "time": pos.get("time"),
-            "time_rcvd": pos.get("time_rcvd"),
-        }
+        return PetLocationResponse.from_raw(pos).to_dict()
 
 @mcp.tool()
 async def get_pet_distance_from_home(device_id: str) -> dict:
@@ -119,12 +109,7 @@ async def get_pet_distance_from_home(device_id: str) -> dict:
         latlong = pos.get("latlong", [None, None])
 
         distance = haversine(home[0], home[1], latlong[0], latlong[1])
-
-        return {
-            "distance_metres": round(distance, 1),
-            "home": {"latitude": home[0], "longitude": home[1]},
-            "current": {"latitude": latlong[0], "longitude": latlong[1]},
-        }
+        return PetDistanceResponse.from_raw(distance, home, latlong).to_dict()
 
 
 @mcp.tool()
@@ -139,16 +124,78 @@ async def get_tracker_status(device_id: str) -> dict:
     async with tractive_client() as client:
         tracker = client.tracker(device_id)
         details, hw = await tracker.details(), await tracker.hw_info()
-        return {
-            "device_id": device_id,
-            "state": details.get("state"),
-            "battery_level": hw.get("battery_level"),
-            "charging_state": details.get("charging_state"),
-            "connection_state": details.get("connection_state"),
-            "firmware_version": hw.get("fw_version"),
-            "hardware_revision": hw.get("hw_revision"),
-            "model_number": details.get("model_number"),
-        }
+        return TrackerStatusResponse.from_raw(device_id, details, hw).to_dict()
+
+
+@mcp.tool()
+async def get_recent_positions(
+    device_id: str, hours: int = 24, include_points: bool = False
+) -> dict:
+    """Get recent position history (breadcrumb trail) for a pet.
+
+    Args:
+        device_id: The device_id from list_pets.
+        hours: How many hours of history to fetch (default 24).
+        include_points: If True, include the full list of position points.
+            Set to False (default) to save context when you only need stats.
+
+    Returns a summary with point count, total distance, time range,
+    and bounding box. If include_points is True, also returns the points array.
+    """
+    now = _time.time()
+    time_from = now - (hours * 3600)
+
+    async with tractive_client() as client:
+        tracker = client.tracker(device_id)
+        raw = await tracker.positions(time_from, now, "json_segments")
+
+    # raw is a list of segments, each segment is a list of position dicts
+    flat: list[dict] = []
+    for segment in raw if isinstance(raw, list) else []:
+        entries = segment if isinstance(segment, list) else [segment]
+        for entry in entries:
+            ll = entry.get("latlong", [None, None])
+            flat.append({
+                "latitude": ll[0],
+                "longitude": ll[1],
+                "time": entry.get("time"),
+                "speed": entry.get("speed"),
+                "accuracy": entry.get("pos_uncertainty"),
+                "sensor_used": entry.get("sensor_used"),
+            })
+
+    # Compute summary
+    total_distance = 0.0
+    for i in range(1, len(flat)):
+        prev, curr = flat[i - 1], flat[i]
+        if prev["latitude"] and curr["latitude"]:
+            total_distance += haversine(
+                prev["latitude"], prev["longitude"],
+                curr["latitude"], curr["longitude"],
+            )
+
+    lats = [p["latitude"] for p in flat if p["latitude"] is not None]
+    lons = [p["longitude"] for p in flat if p["longitude"] is not None]
+    times = [p["time"] for p in flat if p["time"] is not None]
+
+    summary = RecentPositionsSummary(
+        point_count=len(flat),
+        total_distance_metres=round(total_distance, 1),
+        time_from=min(times) if times else None,
+        time_to=max(times) if times else None,
+        bounding_box=BoundingBox(
+            min_lat=min(lats) if lats else 0,
+            max_lat=max(lats) if lats else 0,
+            min_lon=min(lons) if lons else 0,
+            max_lon=max(lons) if lons else 0,
+        ),
+    )
+
+    resp = RecentPositionsResponse(
+        summary=summary,
+        points=flat if include_points else None,
+    )
+    return resp.to_dict()
 
 
 if __name__ == "__main__":
