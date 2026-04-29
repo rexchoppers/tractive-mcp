@@ -12,7 +12,6 @@ keywords = ["mcp", "tractive", "gps", "pet-tracker", "claude"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.13",
     "Topic :: Home Automation",

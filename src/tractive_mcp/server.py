@@ -14,12 +14,6 @@ from tractive_mcp.models import (
 mcp = FastMCP("tractive")
 
 
-@mcp.tool()
-def ping() -> str:
-    """Sanity check tool — returns 'pong' so we know the server is alive."""
-    return "pong"
-
-
 def auth() -> None:
     """Prompt for Tractive credentials and save them."""
     print("Credentials will be saved to ~/.config/tractive-mcp/credentials.json")
@@ -40,15 +34,6 @@ def main() -> None:
         return
 
     mcp.run()
-
-@mcp.tool()
-async def whoami() -> dict:
-    """Diagnostic: confirms Tractive credentials load and authenticate."""
-    from tractive_mcp.client import tractive_client
-    async with tractive_client() as client:
-        auth = await client.authenticate()
-        return {"user_id": auth.get("user_id"), "expires_at": auth.get("expires_at")}
-
 
 @mcp.tool()
 async def list_pets() -> list[dict]:
@@ -254,15 +239,12 @@ async def lost_pet(
             recent_points += len(entries)
 
         # Activate tracker features as requested
-        live_tracking_response = None
-        buzzer_response = None
-        led_response = None
         if enable_live_tracking:
-            live_tracking_response = await tracker.set_live_tracking_active(True)
+            await tracker.set_live_tracking_active(True)
         if enable_buzzer:
-            buzzer_response = await tracker.set_buzzer_active(True)
+            await tracker.set_buzzer_active(True)
         if enable_led:
-            led_response = await tracker.set_led_active(True)
+            await tracker.set_led_active(True)
 
         return {
             "pet_name": pet_name,
@@ -285,9 +267,9 @@ async def lost_pet(
                 "points_last_3_hours": recent_points,
             },
             "actions_taken": {
-                "live_tracking": {"requested": enable_live_tracking, "response": live_tracking_response},
-                "buzzer": {"requested": enable_buzzer, "response": buzzer_response},
-                "led": {"requested": enable_led, "response": led_response},
+                "live_tracking": enable_live_tracking,
+                "buzzer": enable_buzzer,
+                "led": enable_led,
             },
         }
 
@@ -302,8 +284,8 @@ async def set_buzzer(device_id: str, active: bool) -> dict:
     """
     async with tractive_client() as client:
         tracker = client.tracker(device_id)
-        response = await tracker.set_buzzer_active(active)
-        return {"buzzer": "on" if active else "off", "response": response}
+        await tracker.set_buzzer_active(active)
+        return {"buzzer": "on" if active else "off"}
 
 
 @mcp.tool()
@@ -316,8 +298,8 @@ async def set_led(device_id: str, active: bool) -> dict:
     """
     async with tractive_client() as client:
         tracker = client.tracker(device_id)
-        response = await tracker.set_led_active(active)
-        return {"led": "on" if active else "off", "response": response}
+        await tracker.set_led_active(active)
+        return {"led": "on" if active else "off"}
 
 
 @mcp.tool()
@@ -330,8 +312,8 @@ async def set_live_tracking(device_id: str, active: bool) -> dict:
     """
     async with tractive_client() as client:
         tracker = client.tracker(device_id)
-        response = await tracker.set_live_tracking_active(active)
-        return {"live_tracking": "on" if active else "off", "response": response}
+        await tracker.set_live_tracking_active(active)
+        return {"live_tracking": "on" if active else "off"}
 
 
 @mcp.tool()
