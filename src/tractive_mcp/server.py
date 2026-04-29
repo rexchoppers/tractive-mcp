@@ -198,5 +198,96 @@ async def get_recent_positions(
     return resp.to_dict()
 
 
+@mcp.tool()
+async def lost_pet(
+    device_id: str,
+    enable_live_tracking: bool = True,
+    enable_buzzer: bool = False,
+    enable_led: bool = False,
+) -> dict:
+    """Emergency tool — call when a pet is lost or missing.
+
+    Gathers all critical info in one call: current location, distance from home,
+    tracker battery/connection status, and recent movement summary.
+    Can activate live tracking, buzzer, and LED on the tracker.
+
+    Args:
+        device_id: The device_id from list_pets.
+        enable_live_tracking: Turn on live tracking for frequent GPS updates (default True).
+        enable_buzzer: Turn on the tracker buzzer to help locate the pet nearby (default False).
+        enable_led: Turn on the tracker LED light (default False).
+    """
+    async with tractive_client() as client:
+        tracker = client.tracker(device_id)
+
+        # Fetch everything we need in parallel
+        pos = await tracker.pos_report()
+        details = await tracker.details()
+        hw = await tracker.hw_info()
+
+        # Find home location from the pet object
+        home = None
+        objects = await client.trackable_objects()
+        pet_name = None
+        for obj in objects:
+            d = await obj.details()
+            obj_device = d.get("device_id") or (d.get("device_ids") or [None])[0]
+            if obj_device == device_id:
+                home = d.get("home_location")
+                pet_name = d.get("details", {}).get("name") or d.get("name")
+                break
+
+        # Current position
+        latlong = pos.get("latlong", [None, None])
+
+        # Distance from home
+        distance_from_home = None
+        if home and latlong[0] is not None:
+            distance_from_home = round(haversine(home[0], home[1], latlong[0], latlong[1]), 1)
+
+        # Recent positions summary (last 3 hours)
+        now = _time.time()
+        raw = await tracker.positions(now - 10800, now, "json_segments")
+        recent_points = 0
+        for segment in raw if isinstance(raw, list) else []:
+            entries = segment if isinstance(segment, list) else [segment]
+            recent_points += len(entries)
+
+        # Activate tracker features as requested
+        if enable_live_tracking:
+            await tracker.set_live_tracking_active(True)
+        if enable_buzzer:
+            await tracker.set_buzzer_active(True)
+        if enable_led:
+            await tracker.set_led_active(True)
+
+        return {
+            "pet_name": pet_name,
+            "current_location": {
+                "latitude": latlong[0],
+                "longitude": latlong[1],
+                "accuracy_metres": pos.get("pos_uncertainty"),
+                "sensor": pos.get("sensor_used"),
+                "last_fix_time": pos.get("time"),
+            },
+            "distance_from_home_metres": distance_from_home,
+            "home_location": {"latitude": home[0], "longitude": home[1]} if home else None,
+            "tracker": {
+                "battery_level": hw.get("battery_level"),
+                "state": details.get("state"),
+                "charging_state": details.get("charging_state"),
+                "connection_state": details.get("connection_state"),
+            },
+            "recent_activity": {
+                "points_last_3_hours": recent_points,
+            },
+            "actions_taken": {
+                "live_tracking": enable_live_tracking,
+                "buzzer": enable_buzzer,
+                "led": enable_led,
+            },
+        }
+
+
 if __name__ == "__main__":
     main()
