@@ -1,16 +1,31 @@
 [project]
 name = "tractive-mcp"
 version = "0.1.0"
-description = "Add your description here"
+description = "MCP server for Tractive GPS pet trackers — location, status, history, and more"
 readme = "README.md"
+license = "MIT"
 authors = [
     { name = "rexchoppers", email = "rexchoppers@gmail.com" }
 ]
 requires-python = ">=3.13"
+keywords = ["mcp", "tractive", "gps", "pet-tracker", "claude"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Home Automation",
+]
 dependencies = [
     "aiotractive>=1.0.3",
     "mcp[cli]>=1.27.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/rexchoppers/tractive-mcp"
+Repository = "https://github.com/rexchoppers/tractive-mcp"
+Issues = "https://github.com/rexchoppers/tractive-mcp/issues"
 
 [project.scripts]
 tractive-mcp = "tractive_mcp.server:main"
